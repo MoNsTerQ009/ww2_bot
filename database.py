@@ -1,8 +1,10 @@
 import os
 import random
 import datetime
-import httpx
-from dotenv import load_dotest
+import json
+import urllib.request
+import urllib.error
+from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -10,36 +12,43 @@ class Database:
     def __init__(self):
         self.supabase_url = os.getenv("SUPABASE_URL")
         self.supabase_key = os.getenv("SUPABASE_KEY")
-        self.headers = {
+    
+    def _request(self, method, endpoint, data=None):
+        """ارسال درخواست ساده به Supabase"""
+        url = f"{self.supabase_url}/rest/v1/{endpoint}"
+        headers = {
             "apikey": self.supabase_key,
             "Authorization": f"Bearer {self.supabase_key}",
             "Content-Type": "application/json"
         }
-    
-    def _request(self, method, endpoint, data=None):
-        """ارسال درخواست به Supabase REST API"""
-        url = f"{self.supabase_url}/rest/v1/{endpoint}"
-        with httpx.Client() as client:
+        
+        try:
             if method == "GET":
-                response = client.get(url, headers=self.headers)
-            elif method == "POST":
-                response = client.post(url, headers=self.headers, json=data)
-            elif method == "PATCH":
-                response = client.patch(url, headers=self.headers, json=data)
-            elif method == "DELETE":
-                response = client.delete(url, headers=self.headers)
-            else:
-                return None
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req) as response:
+                    return json.loads(response.read().decode())
             
-            if response.status_code in [200, 201, 204]:
-                return response.json() if response.text else []
+            elif method == "POST":
+                data_bytes = json.dumps(data).encode('utf-8')
+                req = urllib.request.Request(url, data=data_bytes, headers=headers, method="POST")
+                with urllib.request.urlopen(req) as response:
+                    return json.loads(response.read().decode()) if response.getcode() != 204 else []
+            
+            elif method == "PATCH":
+                data_bytes = json.dumps(data).encode('utf-8')
+                req = urllib.request.Request(url, data=data_bytes, headers=headers, method="PATCH")
+                with urllib.request.urlopen(req) as response:
+                    return []
+            
+            return None
+        except Exception as e:
+            print(f"Error: {e}")
             return None
     
     def get_user(self, user_id):
         result = self._request("GET", f"users?user_id=eq.{user_id}")
         if result and len(result) > 0:
             user = result[0]
-            # گرفتن اسم کشور
             country_result = self._request("GET", f"countries?id=eq.{user['country_id']}")
             if country_result and len(country_result) > 0:
                 user["country_name"] = country_result[0]["name"]
@@ -55,7 +64,6 @@ class Database:
         return result and len(result) > 0
     
     def register_user(self, user_id, username, country_id):
-        # ثبت کاربر
         self._request("POST", "users", {
             "user_id": user_id,
             "username": username,
@@ -71,7 +79,6 @@ class Database:
             "oil_factories": 1,
             "labs": 0
         })
-        # آپدیت کشور
         self._request("PATCH", f"countries?id=eq.{country_id}", {"is_taken": 1})
     
     def get_other_countries(self, my_country_id):
